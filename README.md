@@ -73,8 +73,7 @@ the `-m 0` option sets the reserved blocks to 0, so the drive is fully usable.
 ```bash
 sudo parted -s /dev/nvme1n1 mklabel gpt mkpart primary ext4 0% 100%
 sudo mkfs.ext4 -m 0 /dev/nvme1n1p1
-```
-```bash
+
 admin@timemachine:~$ lsblk -f
 nvme1n1
 └─nvme1n1p1  ext4   1.0         fc44c527-7611-4ed5-8a68-816f4ee2c3d3
@@ -95,8 +94,8 @@ nvme0n1
 └─nvme0n1p15 vfat   FAT16       5790-D5A3                             117.6M     7% /boot/efi
 nvme1n1
 └─nvme1n1p1  ext4   1.0         fc44c527-7611-4ed5-8a68-816f4ee2c3d3  491.1G     0% /timemachine
-
 ```
+
 ### Configure WireGuard Server
 ```bash
 cd /etc/wireguard
@@ -122,10 +121,6 @@ sudo systemctl enable --now wg-quick@wg0
 # to check on the status of the WireGuard interface
 sudo systemctl status wg-quick@wg0
 ```
-
-
-Maybe
-net.ipv4.ip_forward=1
 
 `/etc/samba/smb.conf`
 ```ini
@@ -180,7 +175,7 @@ Added user tm_Craigs-Macbook.
  Samba share:        smb://10.10.0.1/Craigs-Macbook
  Samba user:          tm_Craigs-Macbook
  Samba password:      gf43AGda4RTmFsdfe334YiGAGPkldwW
-   (share this with the Mac's owner once, then discard --
+   (share this with the Macs owner once, then discard --
     it is not stored anywhere else in plaintext)
 ========================================================
 ```
@@ -260,3 +255,6 @@ Enter a password that is used to encrypt the backup. This is different to the cr
 If you lose this password, you will not be able to recover the backup.
 
 There are likely some files or folders you don't want backed up. You can exclude them by clicking on `Options...` and selecting `Exclude from Backup`.
+
+[TODO]
+The chown that has to be done manually near the end should be in the script.
