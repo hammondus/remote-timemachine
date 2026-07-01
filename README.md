@@ -128,7 +128,7 @@ sudo systemctl status wg-quick@wg0
    server min protocol = SMB2
    server max protocol = SMB3
    bind interfaces only = yes
-   interfaces = wg0 lo
+   interfaces = lo 10.10.0.1/24
    include = /etc/samba/timemachine-shares.conf
 ```
 `bind interfaces only = yes` and `interfaces = wg0 lo` keeps Samba off the public interface entirely, even if the security groups were misconfigured.
