@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+#
+# add-timemachine-client.sh
+# Onboards a new Mac for WireGuard + Time Machine over Samba.
+#
+# Usage: sudo ./add-timemachine-client.sh <machine-name>
+# Example: sudo ./add-timemachine-client.sh macbook3
+#
+set -euo pipefail
+
+# ---- Config: adjust to match your environment ----
+WG_INTERFACE="wg0"
+WG_CONF="/etc/wireguard/${WG_INTERFACE}.conf"
+WG_SUBNET_PREFIX="10.10.0"          # server is .1, clients start at .2
+WG_SERVER_ENDPOINT="timemachine.example.com:51820"  # public DNS/IP:port
+WG_CLIENTS_DIR="/etc/wireguard/clients"
+SAMBA_SHARES_CONF="/etc/samba/timemachine-shares.conf"
+TM_BASE_DIR="/timemachine"
+TM_MAX_SIZE="1T"
+WG_DNS="1.1.1.1"
+
+# ---- Sanity checks ----
+if [[ $EUID -ne 0 ]]; then
+    echo "Run as root (sudo)." >&2
+    exit 1
+fi
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <machine-name>" >&2
+    echo "Example: $0 macbook3" >&2
+    exit 1
+fi
+
+MACHINE_NAME="$1"
+
+# Validate name: alphanumeric + hyphen only, keeps it safe for Samba/filesystem/WG comments
+if [[ ! "$MACHINE_NAME" =~ ^[a-zA-Z0-9-]+$ ]]; then
+    echo "Machine name must be alphanumeric/hyphen only (no spaces or special chars)." >&2
+    exit 1
+fi
+
+SAMBA_USER="tm_${MACHINE_NAME}"
+
+if grep -q "# ${MACHINE_NAME}\$" "$WG_CONF" 2>/dev/null; then
+    echo "Error: '${MACHINE_NAME}' already exists in ${WG_CONF}." >&2
+    exit 1
+fi
+
+if id "$SAMBA_USER" &>/dev/null; then
+    echo "Error: Samba user '${SAMBA_USER}' already exists." >&2
+    exit 1
+fi
+
+# ---- Find next available WireGuard IP ----
+# Looks at existing AllowedIPs entries, picks the next free host in the /24
+USED_OCTETS=$(grep -oP "(?<=${WG_SUBNET_PREFIX}\.)\d+(?=/32)" "$WG_CONF" 2>/dev/null | sort -n || true)
+NEXT_OCTET=2
+for o in $USED_OCTETS; do
+    if [[ "$o" -ge "$NEXT_OCTET" ]]; then
+        NEXT_OCTET=$((o + 1))
+    fi
+done
+
+if [[ "$NEXT_OCTET" -gt 254 ]]; then
+    echo "Error: no free addresses left in ${WG_SUBNET_PREFIX}.0/24." >&2
+    exit 1
+fi
+
+CLIENT_IP="${WG_SUBNET_PREFIX}.${NEXT_OCTET}"
+echo "==> Assigning WireGuard IP: ${CLIENT_IP}"
+
+# ---- Generate WireGuard keypair ----
+mkdir -p "${WG_CLIENTS_DIR}/${MACHINE_NAME}"
+chmod 700 "$WG_CLIENTS_DIR"
+umask 077
+wg genkey | tee "${WG_CLIENTS_DIR}/${MACHINE_NAME}/private.key" | wg pubkey > "${WG_CLIENTS_DIR}/${MACHINE_NAME}/public.key"
+
+CLIENT_PRIVATE_KEY=$(cat "${WG_CLIENTS_DIR}/${MACHINE_NAME}/private.key")
+CLIENT_PUBLIC_KEY=$(cat "${WG_CLIENTS_DIR}/${MACHINE_NAME}/public.key")
+SERVER_PUBLIC_KEY=$(cat /etc/wireguard/server_public.key)
+
+echo "==> Generated keypair for ${MACHINE_NAME}"
+
+# ---- Append peer block to wg0.conf ----
+{
+    echo ""
+    echo "[Peer]"
+    echo "# ${MACHINE_NAME}"
+    echo "PublicKey = ${CLIENT_PUBLIC_KEY}"
+    echo "AllowedIPs = ${CLIENT_IP}/32"
+} >> "$WG_CONF"
+
+echo "==> Added peer block to ${WG_CONF}"
+
+# ---- Apply live without dropping the tunnel ----
+wg syncconf "$WG_INTERFACE" <(wg-quick strip "$WG_INTERFACE")
+echo "==> Peer added live via 'wg syncconf' (no restart needed)"
+
+# ---- Create Samba share directory ----
+SHARE_DIR="${TM_BASE_DIR}/${MACHINE_NAME}"
+mkdir -p "$SHARE_DIR"
+chown "${SUDO_USER:-root}:${SUDO_USER:-root}" "$SHARE_DIR"
+echo "==> Created share directory: ${SHARE_DIR}"
+
+# ---- Create Samba user ----
+useradd -M -s /usr/sbin/nologin "$SAMBA_USER" 2>/dev/null || true
+
+SAMBA_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20 || true)
+printf '%s\n%s\n' "$SAMBA_PASSWORD" "$SAMBA_PASSWORD" | smbpasswd -a -s "$SAMBA_USER"
+smbpasswd -e "$SAMBA_USER" >/dev/null
+
+echo "==> Created Samba user: ${SAMBA_USER}"
+
+# ---- Append Samba share block ----
+{
+    echo ""
+    echo "[${MACHINE_NAME}]"
+    echo "   path = ${SHARE_DIR}"
+    echo "   valid users = ${SAMBA_USER}"
+    echo "   read only = no"
+    echo "   vfs objects = catia fruit streams_xattr"
+    echo "   fruit:time machine = yes"
+    echo "   fruit:time machine max size = ${TM_MAX_SIZE}"
+} >> "$SAMBA_SHARES_CONF"
+
+echo "==> Added Samba share block to ${SAMBA_SHARES_CONF}"
+
+# ---- Reload Samba (no disruption to other shares/sessions) ----
+systemctl reload smbd
+
+echo "==> Reloaded smbd"
+
+# ---- Write client WireGuard config for the Mac ----
+CLIENT_CONF="${WG_CLIENTS_DIR}/${MACHINE_NAME}/${MACHINE_NAME}.conf"
+cat > "$CLIENT_CONF" <<EOF
+[Interface]
+PrivateKey = ${CLIENT_PRIVATE_KEY}
+Address = ${CLIENT_IP}/32
+DNS = ${WG_DNS}
+
+[Peer]
+PublicKey = ${SERVER_PUBLIC_KEY}
+Endpoint = ${WG_SERVER_ENDPOINT}
+AllowedIPs = ${WG_SUBNET_PREFIX}.1/32
+PersistentKeepalive = 25
+EOF
+
+chmod 600 "$CLIENT_CONF"
+
+# ---- Summary ----
+echo ""
+echo "========================================================"
+echo " Onboarded: ${MACHINE_NAME}"
+echo "========================================================"
+echo " WireGuard IP:      ${CLIENT_IP}"
+echo " Client config:     ${CLIENT_CONF}"
+echo "   (import this into the WireGuard app on the Mac)"
+echo ""
+echo " Samba share:        smb://${WG_SUBNET_PREFIX}.1/${MACHINE_NAME}"
+echo " Samba user:          ${SAMBA_USER}"
+echo " Samba password:      ${SAMBA_PASSWORD}"
+echo "   (share this with the Mac's owner once, then discard --"
+echo "    it is not stored anywhere else in plaintext)"
+echo "========================================================"
