@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 #
-# add-timemachine-client.sh
 # Onboards a new Mac for WireGuard + Time Machine over Samba.
 #
 # Usage: sudo ./add-timemachine-client.sh <machine-name>
@@ -12,11 +11,11 @@ set -euo pipefail
 WG_INTERFACE="wg0"
 WG_CONF="/etc/wireguard/${WG_INTERFACE}.conf"
 WG_SUBNET_PREFIX="10.10.0"          # server is .1, clients start at .2
-WG_SERVER_ENDPOINT="timemachine.example.com:51820"  # public DNS/IP:port
+WG_SERVER_ENDPOINT="timemachine.hammond.zone:51820"  # public DNS/IP:port
 WG_CLIENTS_DIR="/etc/wireguard/clients"
 SAMBA_SHARES_CONF="/etc/samba/timemachine-shares.conf"
 TM_BASE_DIR="/timemachine"
-TM_MAX_SIZE="1T"
+TM_MAX_SIZE="512M"
 WG_DNS="1.1.1.1"
 
 # ---- Sanity checks ----
@@ -96,13 +95,11 @@ echo "==> Added peer block to ${WG_CONF}"
 wg syncconf "$WG_INTERFACE" <(wg-quick strip "$WG_INTERFACE")
 echo "==> Peer added live via 'wg syncconf' (no restart needed)"
 
-# ---- Create Samba share directory ----
-SHARE_DIR="${TM_BASE_DIR}/${MACHINE_NAME}"
-mkdir -p "$SHARE_DIR"
-chown "${SUDO_USER:-root}:${SUDO_USER:-root}" "$SHARE_DIR"
-echo "==> Created share directory: ${SHARE_DIR}"
+# ---- Ensure base directory exists and is traversable ----
+mkdir -p "$TM_BASE_DIR"
+chmod 755 "$TM_BASE_DIR"
 
-# ---- Create Samba user ----
+# ---- Create Samba user (must exist before chowning the share dir) ----
 useradd -M -s /usr/sbin/nologin "$SAMBA_USER" 2>/dev/null || true
 
 SAMBA_PASSWORD=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20 || true)
@@ -110,6 +107,13 @@ printf '%s\n%s\n' "$SAMBA_PASSWORD" "$SAMBA_PASSWORD" | smbpasswd -a -s "$SAMBA_
 smbpasswd -e "$SAMBA_USER" >/dev/null
 
 echo "==> Created Samba user: ${SAMBA_USER}"
+
+# ---- Create Samba share directory, owned by that user ----
+SHARE_DIR="${TM_BASE_DIR}/${MACHINE_NAME}"
+mkdir -p "$SHARE_DIR"
+chown "${SAMBA_USER}:${SAMBA_USER}" "$SHARE_DIR"
+chmod 700 "$SHARE_DIR"
+echo "==> Created share directory: ${SHARE_DIR}"
 
 # ---- Append Samba share block ----
 {
