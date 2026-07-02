@@ -131,14 +131,10 @@ sudo systemctl status wg-quick@wg0
    interfaces = lo 10.10.0.1/24
    include = /etc/samba/timemachine-shares.conf
 ```
-`bind interfaces only = yes` and `interfaces = wg0 lo` keeps Samba off the public interface entirely, even if the security groups were misconfigured.
-
-```bash
-sudo touch /etc/samba/timemachine-shares.conf
-```
 
 get `add-timemachine-client` from this repo.
 Check the config at the start. These lines need to be set correctly before running the script.
+
 ```ini
 WG_SERVER_ENDPOINT="timemachine.example.com:51820"  # public DNS/IP:port
 TM_BASE_DIR="/timemachine"
@@ -255,6 +251,3 @@ Enter a password that is used to encrypt the backup. This is different to the cr
 If you lose this password, you will not be able to recover the backup.
 
 There are likely some files or folders you don't want backed up. You can exclude them by clicking on `Options...` and selecting `Exclude from Backup`.
-
-[TODO]
-The chown that has to be done manually near the end should be in the script.

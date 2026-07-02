@@ -11,7 +11,7 @@ set -euo pipefail
 WG_INTERFACE="wg0"
 WG_CONF="/etc/wireguard/${WG_INTERFACE}.conf"
 WG_SUBNET_PREFIX="10.10.0"          # server is .1, clients start at .2
-WG_SERVER_ENDPOINT="timemachine.hammond.zone:51820"  # public DNS/IP:port
+WG_SERVER_ENDPOINT="timemachine.example.com:51820"  # public DNS/IP:port
 WG_CLIENTS_DIR="/etc/wireguard/clients"
 SAMBA_SHARES_CONF="/etc/samba/timemachine-shares.conf"
 TM_BASE_DIR="/timemachine"
