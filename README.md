@@ -127,12 +127,21 @@ sudo systemctl status wg-quick@wg0
 `/etc/samba/smb.conf`
 ```ini
 [global]
+   load printers = no
+   printing = bsd
+   printcap name = /dev/null
+   disable spoolss=yes
+
+   server multi channel support = yes
+   aio read size = 1
+   aio write size = 1
    server min protocol = SMB2
    server max protocol = SMB3
    bind interfaces only = yes
    interfaces = lo 10.10.0.1/24
    include = /etc/samba/timemachine-shares.conf
 ```
+Delete all the other shares from smb.conf, such as `homes` `printers` `print$`
 
 get `add-timemachine-client` from this repo.
 Check the config at the start. These lines need to be set correctly before running the script.
@@ -180,12 +189,14 @@ Added user tm_Craigs-Macbook.
 
 This script will add a new user `tm_Craigs-Macbook` with a generated password.
 
-Add to `/etc/samba/timemachine-shares.conf` to allow Samba access to the share.
+Add the following to `/etc/samba/timemachine-shares.conf` to allow Samba access to the share.
 ```ini
 path = /timemachine/Craigs-Macbook
 valid users = tm_Craigs-Macbook
 read only = no
 vfs objects = catia fruit streams_xattr
+ea support = yes
+fruit:copyfile = yes
 fruit:time machine = yes
 fruit:time machine max size = 1T
 ```
@@ -278,3 +289,37 @@ To display information from MacOS on time machine
 ```
 log stream --predicate 'subsystem == "com.apple.TimeMachine"' --info
 ```
+
+
+
+
+## Samba config description
+Reasons why certain things were added to the samba config
+## server multi channel support = yes
+
+What it does:
+Allows Samba to use multiple concurrent TCP connections between the server and your Mac for a single SMB session.
+
+Why for Time Machine:
+Time Machine transfers large amounts of data (often 50–200 GB). Enabling this allows Samba to stripe the data across multiple network links (or multiple CPU cores handling network I/O), significantly increasing sustained throughput. Note: Your Mac and network switch must also support RSS (Receive Side Scaling) for this to work perfectly, but enabling it doesn't hurt.
+
+### aio read size = 1 & aio write size = 1
+What it does:
+These set the minimum I/O size required to trigger Asynchronous I/O. Setting them to 1 byte means every read and write request is handled asynchronously.
+
+Why for Time Machine:
+Instead of the Samba process blocking (freezing) while it waits for your hard drive to spin and write data, it hands the I/O request off to the kernel's AIO thread pool and immediately goes back to handling the next network request. This dramatically improves parallelism and prevents Time Machine from timing out during large file transfers, especially on spinning HDDs.
+
+### fruit:copyfile = yes
+What it does:
+Enables the SMB FSCTL_SRV_COPYCHUNK command—commonly known as Server-Side Copy.
+
+Why for Time Machine:
+Time Machine frequently creates new snapshots by copying blocks of data from existing snapshots. With this enabled, when your Mac tells the server to copy a large file, the Samba server copies that file directly on the disk without sending the data across the network to your Mac and back again. This reduces network traffic and makes local "cleanup" and snapshot creation almost instant.
+
+### ea support = yes
+What it does:
+Enables support for Extended Attributes (EAs) on the SMB share.
+
+Why for Time Machine:
+macOS relies heavily on EAs (specifically the com.apple.FinderInfo and com.apple.metadata namespaces) to store file tags, quarantine flags, and resource forks. More critically, Time Machine uses EAs to store the backup's BackupItem metadata and UUIDs. Without ea support = yes, the share will still look like a writable disk, but Time Machine will fail to create the necessary sparse bundle metadata and will throw a cryptic error during the backup verification phase.
