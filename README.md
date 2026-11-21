@@ -41,6 +41,7 @@ set mouse=r
 syntax on
 ```
 
+
 Once the instance is created, SSH into it and run the following commands:
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -48,6 +49,7 @@ sudo timedatectl set-timezone Australia/Melbourne
 sudo hostnamectl set-hostname timemachine.example.com
 sudo reboot
 ```
+
 
 After the reboot, SSH back into the instance and run the following commands:
 `Glances` is not required. It's my prefered system monitoring tool.
@@ -270,3 +272,9 @@ Enter a password that is used to encrypt the backup. This is different to the cr
 If you lose this password, you will not be able to recover the backup.
 
 There are likely some files or folders you don't want backed up. You can exclude them by clicking on `Options...` and selecting `Exclude from Backup`.
+
+## Troubleshooting
+To display information from MacOS on time machine
+```
+log stream --predicate 'subsystem == "com.apple.TimeMachine"' --info
+```
