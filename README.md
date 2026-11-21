@@ -5,7 +5,7 @@ Whenever the Macbook has internet, Time Machine will automatically back up to th
 
 ## Overview
 These instructions are for my chosen setup, which is:
-- Debian 13 on AWS - t4g.nano (2 cpu 512mb ram) is more than enough
+- Debian 13 on AWS - t4g.micro (2 cpu 1gb ram)
 - WireGuard VPN
 - Samba file sharing with the vfs_fruit module to work with Time Machine.
 
@@ -226,6 +226,25 @@ PersistentKeepalive = 25
 Set permissions on the Time Machine share
 ```bash
 sudo chown tm_Craigs-Macbook:tm_Craigs-Macbook /timemachine/Craigs-Macbook/
+```
+
+## Change some default Debian settings
+Add swap.
+```bash
+sudo fallocate -l 1G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+My original server was a t4g.nano (512MB ram), but it ran out of enough contiguous ram for the network cards
+`ena ... Failed to allocate buffer for rx queue`
+
+Not sure if this is needed now i'm running on 1gb of ram, but it can't hurt
+```bash
+sudo sysctl -w vm.min_free_kbytes=65536
+echo 'vm.min_free_kbytes=65536' | sudo tee /etc/sysctl.d/90-netbuf.conf
 ```
 
 # Mac Client Setup
